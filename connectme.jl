@@ -70,11 +70,12 @@ struct Tile
   # The number of links that the tile presents in a given direction.
   link_counts::Vector{LinkCount}     # indexed by Direction, length 4.
 
-  function Tile(restricted_to_row, restricted_to_column, direction, link_counts...)
+  function Tile(link_counts...; row=nothing, col=nothing, rotates=true)
     @assert(length(link_counts) == 4)
-    return new(restricted_to_row, restricted_to_column, direction,
+    return new(row, col, rotates,
                [lc for lc in link_counts])
   end
+
 end
 
 function link_count(tile::Tile, direction::Direction, rotation::Rotation)
@@ -84,4 +85,5 @@ function link_count(tile::Tile, direction::Direction, rotation::Rotation)
   return tile.link_counts[Int(direction + rotation)]
 end
 
-@test link_count(Tile(2, 3, true, IIII, III, I, O), RIGHT, 0) == III
+
+@test link_count(Tile(IIII, III, I, O), RIGHT, 0) == III
