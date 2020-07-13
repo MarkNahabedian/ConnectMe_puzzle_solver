@@ -4,34 +4,15 @@
 using Test
 
 
-"""A Connect Me puzzle sonsists of a square grid.  There are also
-tiles which can be placed in the grid."""
-struct Puzzle
-  tiles  # ::Array{Tile}
-  grid
-end
-
-# function Puzzle(width::Int, height::Int, tiles...)
-#   for tile in tiles
-#     @assert(isa(tile, Tile))
-#   end
-#   # Create Cells
-#   local grid = Array{Cell}(undef, width, height)
-#   for row = 1 : width
-#     for colunm = 1 : height
-#       local cell == Cell(row, column)
-#       grid[row, column] = cell
-#     end
-#   end
-#   # Create Edges
-# end
-
-
 mutable struct Cell
-  row::Int
-  column::Int 
-  edges
-  candidates
+  row::Int 
+  column::Int
+  edges     # indexed by Direction
+  candidates # ::Vector{Candidate}
+
+  function Cell(row::Int, column::Int)
+    return new(row, column, undef, Vector{Candidate}())
+  end
 end
 
 
@@ -70,12 +51,10 @@ struct Tile
   # The number of links that the tile presents in a given direction.
   link_counts::Vector{LinkCount}     # indexed by Direction, length 4.
 
-  function Tile(link_counts...; row=nothing, col=nothing, rotates=true)
-    @assert(length(link_counts) == 4)
+  function Tile(link_counts::Vararg{LinkCount, 4}; row=nothing, col=nothing, rotates=true)
     return new(row, col, rotates,
                [lc for lc in link_counts])
   end
-
 end
 
 function link_count(tile::Tile, direction::Direction, rotation::Rotation)
@@ -85,5 +64,73 @@ function link_count(tile::Tile, direction::Direction, rotation::Rotation)
   return tile.link_counts[Int(direction + rotation)]
 end
 
-
 @test link_count(Tile(IIII, III, I, O), RIGHT, 0) == III
+
+
+"""Create all possible Candidates for the Cell and add them."""
+function add_candidates(cell::Cell, tile::Tile)
+  if !(tile.restricted_to_row == nothing ||
+       tile.restricted_to_row == cell.row)
+    return
+  end
+  if !(tile.restricted_to_column == nothing ||
+       tile.restricted_to_column == cell.column)
+    return
+  end
+  # TODO: don't add all four rotations of tile has rotational symetry.
+  for rotation in (tile.rotates ? [0, 1, 2, 3] : [0])
+    push!(cell.candidates, Candidate(tile, rotation))
+  end
+end
+
+
+"""Candidate represents a possible orientation of a Tile within a Cell.
+Candidates are added to Cells when the puzzle is created.  Candidates are
+removed during constraint propagation."""
+struct Candidate
+  tile::Tile
+  rotation::Rotation
+end
+
+function link_count(candidate::Candidate, direction::Direction)
+  return link_count(candidate.tile, direction, candidate.rotation)
+end
+
+
+"""A Connect Me puzzle sonsists of a square grid.  There are also
+tiles which can be placed in the grid."""
+struct Puzzle
+  tiles::Vector{Tile}
+  grid::Array{Cell, 2}
+end
+
+function Puzzle(width::Int, height::Int, tiles::Vector{Tile})
+  # Create Cells
+  local grid = Array{Cell}(undef, height, width)
+  for row = 1:height
+    for column = 1:width
+      local cell = Cell(row, column)
+      grid[row, column] = cell
+      for tile in tiles
+        add_candidates(cell, tile)
+      end
+    end
+  end
+  # Create Edges
+  return Puzzle(tiles, grid)
+end
+
+
+begin
+  local tiles = [
+    Tile(I, I, I, II),
+    Tile(O, II, III, O, row=1, col=1, rotates=false),
+    Tile(III, II, I, IIII, row=3),
+    Tile(IIII, II, IIII, II, col=2)
+  ]
+  local puzzle = Puzzle(4, 4, tiles)
+  @test length(puzzle.grid[1, 3].candidates) == 4
+  @test length(puzzle.grid[1, 1].candidates) == 5
+  @test length(puzzle.grid[3, 2].candidates) == 12
+end
+
