@@ -176,3 +176,24 @@ begin
   @test length(puzzle.grid[3, 2].candidates) == 12
 end
 
+
+# A ssample puzzle
+ADVANCED_112 = Puzzle(5, 5, [
+  Tile(I, II, O, O),
+  Tile(O, IIII, II, O, row=1),
+  Tile(IIII, O, O, III, rotates=false),
+  Tile(II, O, IIII, III, col=5),
+  Tile(II, O, I, II, col=2),
+  Tile(II, I, III, O, row=3, col=3),
+  Tile(O, II, III, I, rotates=false),
+  Tile(O, I, O, O, col=1, rotates=false),
+  Tile(IIII, O, II, II, rotates=false),
+  Tile(III, III, O, II, row=4),
+  Tile(III, O, O, O, col=4),
+  Tile(III, IIII, III, II),
+  Tile(II, O, II, I),
+  Tile(O, II, II, II, rotates=false),
+  Tile(III, III, I, I, col=3),
+  Tile(III, II, II, IIII)
+  ])
+
