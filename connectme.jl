@@ -1,17 +1,17 @@
 # A solver for the "Connect Me logic puzzle" Android app.
 
 
+using StaticArrays
 using Test
 
 
 mutable struct Cell
   row::Int 
   column::Int
-  edges     # indexed by Direction
-  candidates # ::Vector{Candidate}
+  candidates    # ::Vector{Candidate}
 
   function Cell(row::Int, column::Int)
-    return new(row, column, undef, Vector{Candidate}())
+    return new(row, column, Vector{Candidate}())
   end
 end
 
@@ -26,6 +26,13 @@ end
 # Directions start at 1 because they are used as the index into
 # the link_count field of Tile.
 @enum Direction UP=1 RIGHT=2 DOWN=3 LEFT=4
+
+function opposite(d::Direction)
+  if d == RIGHT return LEFT end
+  if c == LEFT return RIGHT end
+  if d == UP return DOWN end
+  if d == DOWN return UP end
+end
 
 # ????? Why is no constructor defined for this?
 # primitive type Rotation <: Integer 8 end
@@ -116,8 +123,35 @@ function Puzzle(width::Int, height::Int, tiles::Vector{Tile})
       end
     end
   end
-  # Create Edges
   return Puzzle(tiles, grid)
+end
+
+
+function cell(puzzle::Puzzle, row::Int, column::Int)::Union{Cell, Nothing}
+  if row < 1 return nothing end
+  if row > size(puzzle.grid, 1) return nothing end
+  if column < 1 return nothing end
+  if column > size(puzzle.grid, 2) return nothing end
+  return puzzle.grid[row, column]
+end
+  
+
+function neighbor(puzzle::Puzzle, c::Cell,
+                  direction::Direction)::Union{Cell, Nothing}
+  local neighbor_row = c.row
+  local neighbor_column = c.column
+  if direction == UP
+    neighbor_row -= 1
+  elseif direction == DOWN
+    neighbor_row += 1
+  elseif direction == LEFT
+    neighbor_column -= 1
+  elseif direction == RIGHT
+    neighbor_column += 1
+  else
+    error("unknown direction")
+  end
+  return cell(puzzle, neighbor_row, neighbor_column)
 end
 
 
@@ -129,6 +163,14 @@ begin
     Tile(IIII, II, IIII, II, col=2)
   ]
   local puzzle = Puzzle(4, 4, tiles)
+  @test neighbor(puzzle, cell(puzzle, 1, 1), UP) == nothing
+  @test neighbor(puzzle, cell(puzzle, 1, 1), LEFT) == nothing
+  @test neighbor(puzzle, cell(puzzle, 4, 4), DOWN) == nothing
+  @test neighbor(puzzle, cell(puzzle, 4, 4), RIGHT) == nothing
+  @test neighbor(puzzle, cell(puzzle, 2, 2), UP) === cell(puzzle, 1, 2)
+  @test neighbor(puzzle, cell(puzzle, 2, 2), DOWN) === cell(puzzle, 3, 2)
+  @test neighbor(puzzle, cell(puzzle, 2, 2), LEFT) === cell(puzzle, 2, 1)
+  @test neighbor(puzzle, cell(puzzle, 2, 2), RIGHT) === cell(puzzle, 2, 3)
   @test length(puzzle.grid[1, 3].candidates) == 4
   @test length(puzzle.grid[1, 1].candidates) == 5
   @test length(puzzle.grid[3, 2].candidates) == 12
