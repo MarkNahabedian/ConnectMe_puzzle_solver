@@ -91,6 +91,22 @@ function add_candidates(cell::Cell, tile::Tile)
 end
 
 
+# It's convenient for has_candidate to work on the the absense of a
+# Tile, as can be returned by neighbor.
+function has_candidate(cell::Nothing, tile::Tile)::Bool
+  return false
+end
+
+function has_candidate(cell::Cell, tile::Tile)::Bool
+  for c in cell.candidates
+    if c.tile == tile
+      return true
+    end
+  end
+  return false
+end
+
+
 """Candidate represents a possible orientation of a Tile within a Cell.
 Candidates are added to Cells when the puzzle is created.  Candidates are
 removed during constraint propagation."""
@@ -111,6 +127,9 @@ struct Puzzle
   grid::Array{Cell, 2}
 end
 
+rows(p::Puzzle) = size(p.grid, 1)
+columns(p::Puzzle) = size(p.grid, 2)
+
 function Puzzle(width::Int, height::Int, tiles::Vector{Tile})
   # Create Cells
   local grid = Array{Cell}(undef, height, width)
@@ -129,9 +148,9 @@ end
 
 function cell(puzzle::Puzzle, row::Int, column::Int)::Union{Cell, Nothing}
   if row < 1 return nothing end
-  if row > size(puzzle.grid, 1) return nothing end
+  if row > rows(puzzle) return nothing end
   if column < 1 return nothing end
-  if column > size(puzzle.grid, 2) return nothing end
+  if column > columns(puzzle) return nothing end
   return puzzle.grid[row, column]
 end
   
@@ -196,4 +215,82 @@ ADVANCED_112 = Puzzle(5, 5, [
   Tile(III, III, I, I, col=3),
   Tile(III, II, II, IIII)
   ])
+
+
+"""Edges provides an iterator over the edges of a Puzzle.
+An "edge" is a pair of adjacent cells."""
+struct Edges
+  puzzle::Puzzle
+end
+
+rows(e::Edges) = rows(e.puzzle)
+columns(e::Edges) = columns(e.puzzle)
+cell(e::Edges, row::Int, col::Int) = cell(e.puzzle, row, col)
+
+function Base.iterate(e::Edges)
+  # We use half indices to indicate the "edge" between two rows or columns.
+  # The state we return refers to that last pair of cells returned.
+  return ((nothing, DOWN, UP, cell(e, 1, 1)), (e, 0.5, 1))
+end
+
+function Base.iterate(e::Edges, state)
+  (e, row, col) = state
+  if isa(row, AbstractFloat)
+    # We're on a horizontal edge, with cells that are UP/DOWN with
+    # respect to each other.
+    # Advance to the next column.
+    col += 1
+    if col > columns(e)
+      col = 1
+      row += 1
+    end
+    if row < rows(e) + 1
+      local row1 = floor(Int, row)
+      local row2 = ceil(Int, row)
+      return ((cell(e, row1, col), DOWN, UP, cell(e, row2,col)),
+              (e, row, col))
+    else
+      # We're done with all horizontal edges.  Return the first pair
+      # in the first column
+      return ((nothing, RIGHT, LEFT, cell(e, 1, 1)), (e, 1, 0.5))
+    end
+  end
+  row::Int
+  col::AbstractFloat
+  row += 1
+  if row > rows(e)
+    col += 1
+    row = 1
+    if col > columns(e) + 1
+      return nothing
+    end
+  end
+  col1 = floor(Int, col)
+  col2 = ceil(Int, col)
+  return ((cell(e, row, col1), RIGHT, LEFT, cell(e, row, col2)),
+          (e, row, col))
+end
+
+
+begin
+  local puzzle = Puzzle(4, 4, Vector{Tile}())
+  local count = 0
+  for i in Edges(puzzle)
+    count += 1
+    cell1, d1, d2, cell2 = i
+    # show(i)
+    # print("\n")
+    if cell1 != nothing
+      @test neighbor(puzzle, cell1, d1) == cell2
+    end
+    if cell2 != nothing
+      @test neighbor(puzzle, cell2, d2) == cell1
+    end
+  end
+  # Make sure we hit the right number of edge pairs.
+  @test count == (rows(puzzle) + 1) * columns(puzzle) + rows(puzzle) * (columns(puzzle) + 1)
+end
+
+
+
 
