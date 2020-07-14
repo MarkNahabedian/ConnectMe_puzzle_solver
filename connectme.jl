@@ -84,8 +84,24 @@ function add_candidates(cell::Cell, tile::Tile)
        tile.restricted_to_column == cell.column)
     return
   end
-  # TODO: don't add all four rotations of tile has rotational symetry.
-  for rotation in (tile.rotates ? [0, 1, 2, 3] : [0])
+  local rotations =
+    if tile.rotates
+      if link_count(tile, UP, 0) == link_count(tile, DOWN, 0) &&
+         link_count(tile, UP, 0) == link_count(tile, DOWN, 0)
+         # 180 degree symetry
+         if link_count(tile, UP, 0) == link_count(tile, RIGHT, 0)
+           # full rotational symetry
+           [0]
+         else
+           [0, 2]
+         end
+      else
+        [0, 1, 2, 3]
+      end
+    else
+      [0]
+    end
+  for rotation in rotations
     push!(cell.candidates, Candidate(tile, rotation))
   end
 end
@@ -176,10 +192,11 @@ end
 
 begin
   local tiles = [
-    Tile(I, I, I, II),
+    Tile(I, I, I, I),                   # fully symetric, 1 rotation.
     Tile(O, II, III, O, row=1, col=1, rotates=false),
     Tile(III, II, I, IIII, row=3),
-    Tile(IIII, II, IIII, II, col=2)
+    Tile(IIII, II, IIII, II, col=2),    # 180 symetry, 2 rotations.
+    Tile(IIII, III, II, I)              # 4 rotations
   ]
   local puzzle = Puzzle(4, 4, tiles)
   @test neighbor(puzzle, cell(puzzle, 1, 1), UP) == nothing
@@ -190,9 +207,9 @@ begin
   @test neighbor(puzzle, cell(puzzle, 2, 2), DOWN) === cell(puzzle, 3, 2)
   @test neighbor(puzzle, cell(puzzle, 2, 2), LEFT) === cell(puzzle, 2, 1)
   @test neighbor(puzzle, cell(puzzle, 2, 2), RIGHT) === cell(puzzle, 2, 3)
-  @test length(puzzle.grid[1, 3].candidates) == 4
-  @test length(puzzle.grid[1, 1].candidates) == 5
-  @test length(puzzle.grid[3, 2].candidates) == 12
+  @test length(puzzle.grid[1, 3].candidates) == 5
+  @test length(puzzle.grid[1, 1].candidates) == 6
+  @test length(puzzle.grid[3, 2].candidates) == 11
 end
 
 
@@ -290,7 +307,4 @@ begin
   # Make sure we hit the right number of edge pairs.
   @test count == (rows(puzzle) + 1) * columns(puzzle) + rows(puzzle) * (columns(puzzle) + 1)
 end
-
-
-
 
