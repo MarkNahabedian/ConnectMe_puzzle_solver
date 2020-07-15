@@ -19,7 +19,47 @@ end
 # Each edge of each Tile has an associated LinkCount.  To solve the
 # puzzle, the LinkCounts of the common edge of two adjacent Tiles must
 # match.
-@enum LinkCount O=0 I=1 II=2 III=3 IIII=4
+@enum LinkCount O=1 I=1<<1 II=1<<2 III=1<<3 IIII=1<<4
+
+struct LinkCountSet
+  bits::UInt8
+
+  LinkCountSet(bits::UInt8) = new(bits)
+  LinkCountSet() = LinkCountSet(0x0)
+  LinkCountSet(lc::LinkCount) = LinkCountSet(UInt8(lc))
+end
+
+Base.:|(lc1::LinkCount, lc2::LinkCount) = LinkCountSet(UInt8(lc1) | UInt8(lc2))
+
+Base.:|(lc::LinkCount, lcs::LinkCountSet) = LinkCountSet(UInt8(lc) | lcs.bits)
+
+Base.:|(lcs::LinkCountSet, lc::LinkCount) = lc | lcs
+
+Base.:|(lcs1::LinkCountSet, lcs2::LinkCountSet) = LinkCountSet(lcs1.bits | lcs2.bits)
+
+Base.:&(lc1::LinkCount, lc2::LinkCount) = LinkCountSet(UInt8(lc1) & UInt8(lc2))
+
+Base.:&(lc::LinkCount, lcs::LinkCountSet) = LinkCountSet(UInt8(lc) & lcs.bits)
+
+Base.:&(lcs::LinkCountSet, lc::LinkCount) = lc & lcs
+
+Base.:&(lcs1::LinkCountSet, lcs2::LinkCountSet) = LinkCountSet(lcs1.bits & lcs2.bits)
+
+function Base.show(io::IO, lcs::LinkCountSet)
+  local any = false
+  for lc in [O, I, II, III, IIII]
+    if (lcs & lc) != LinkCountSet()
+      if any
+        print(io, "|")
+      end
+      show(io, lc)
+      any = true
+    end
+  end
+  if !any
+    print("LinkCountSet()")
+  end
+end
 
 
 # Each Tile has four sides identified by their directions.
@@ -308,3 +348,26 @@ begin
   @test count == (rows(puzzle) + 1) * columns(puzzle) + rows(puzzle) * (columns(puzzle) + 1)
 end
 
+
+LinkCountSet(c::Candidate, direction::Direction) =
+  LinkCountSet(link_count(c, direction))
+
+function LinkCountSet(c::Cell, direction::Direction)
+  local result = LinkCountSet()
+  for candidate in c.candidates
+    result |= LinkCountSet(candidate, direction)
+  end
+  return result
+end
+
+begin
+  local tiles = [
+    Tile(I, I, I, I),
+    Tile(II, II, II, II),
+    Tile(III, IIII, III, IIII, rotates=false, col=3)
+  ]
+  local puzzle = Puzzle(4, 4, tiles)
+  @test LinkCountSet(cell(puzzle, 1, 1), RIGHT) == I | II
+  @test LinkCountSet(cell(puzzle, 1, 3), RIGHT) == I | II | IIII
+  @test LinkCountSet(cell(puzzle, 1, 3), DOWN) == I | II | III
+end
