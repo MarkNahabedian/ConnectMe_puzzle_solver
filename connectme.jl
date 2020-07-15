@@ -104,6 +104,28 @@ struct Tile
   end
 end
 
+function equivalent(tile1::Tile, tile2::Tile)::Bool
+  if tile1.restricted_to_row != tile2.restricted_to_row return false end
+  if tile1.restricted_to_column != tile2.restricted_to_column return false end
+  if tile1.rotates != tile2.rotates return false end
+  if tile1.rotates
+    # The Tiles could be rotated relative to one another
+    # Is there a rotation of tile2 that h as the same link_counts as tile1?
+    function match(rotation, direction)
+      return link_count(tile1, direction, 0) ==
+             link_count(tile2, direction, rotation)
+    end
+    if !any(rotation -> all(direction -> match(rotation, direction),
+                            instances(Direction)),
+            0:3)
+       return false
+     end
+  else
+    if tile1.link_counts != tile2.link_counts return false end
+  end
+  return true
+end
+
 function link_count(tile::Tile, direction::Direction, rotation::Rotation)
   if !tile.rotates
     @assert rotation == 0
@@ -231,6 +253,17 @@ end
 
 
 begin
+  @test equivalent(Tile(I, II, III, IIII),
+                   Tile(I, II, III, IIII)) == true
+  @test equivalent(Tile(I, II, III, IIII),
+                   Tile(I, III, II, IIII)) == false
+  @test equivalent(Tile(I, II, III, IIII, rotates=false),
+                   Tile(I, II, III, IIII)) == false
+  @test equivalent(Tile(IIII, I, II, III),
+                   Tile(I, II, III, IIII)) == true
+end
+
+begin
   local tiles = [
     Tile(I, I, I, I),                   # fully symetric, 1 rotation.
     Tile(O, II, III, O, row=1, col=1, rotates=false),
@@ -352,6 +385,9 @@ end
 LinkCountSet(c::Candidate, direction::Direction) =
   LinkCountSet(link_count(c, direction))
 
+# This is a convenience for dealing with the bounds of the grid.
+LiinkCountSet(::Nothing) = LinkCountSeet()
+
 function LinkCountSet(c::Cell, direction::Direction)
   local result = LinkCountSet()
   for candidate in c.candidates
@@ -371,3 +407,21 @@ begin
   @test LinkCountSet(cell(puzzle, 1, 3), RIGHT) == I | II | IIII
   @test LinkCountSet(cell(puzzle, 1, 3), DOWN) == I | II | III
 end
+
+
+struct Effect
+  # Total number of candidates across all Cells before and after rule is
+  # applied:
+  before::Int
+  after::Int
+  cell::Cell
+  removed::Vector{Candidate}
+end
+
+struct LogEntry
+  rule::Function
+  effects::Vector{Effect}
+end
+
+Log = Vector{LogEntry}
+
