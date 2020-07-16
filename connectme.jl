@@ -1,6 +1,7 @@
 # A solver for the "Connect Me logic puzzle" Android app.
 
 
+using Printf
 using StaticArrays
 using Test
 
@@ -13,6 +14,13 @@ mutable struct Cell
   function Cell(row::Int, column::Int)
     return new(row, column, Vector{Candidate}())
   end
+end
+
+count_candidates(cell::Cell) = length(cell.candidates)
+
+function Base.show(io::IO, c::Cell)
+  @printf(io, "Cell(%d, %d [%d candidates])",
+          c.row, c.column, count_candidates(c))
 end
 
 
@@ -28,6 +36,8 @@ struct LinkCountSet
   LinkCountSet() = LinkCountSet(0x0)
   LinkCountSet(lc::LinkCount) = LinkCountSet(UInt8(lc))
 end
+
+isempty(lcs::LinkCountSet) = lcs.bits == 0
 
 Base.:|(lc1::LinkCount, lc2::LinkCount) = LinkCountSet(UInt8(lc1) | UInt8(lc2))
 
@@ -102,6 +112,28 @@ struct Tile
     return new(row, col, rotates,
                [lc for lc in link_counts])
   end
+end
+
+function Base.show(io::IO, tile::Tile)
+  print(io, "Tile(")
+  local first = true
+  for lc in tile.link_counts
+    if !first
+      print(io, ", ")
+    end
+    first = false
+    show(io, lc)
+  end
+  if tile.rotates == false
+    print(io, ", rotates=false")
+  end
+  if tile.restricted_to_row != nothing
+    @printf(io, ", row=%d", tile.restricted_to_row)
+  end
+  if tile.restricted_to_column != nothing
+    @printf(io, ", col=%d", tile.restricted_to_column)
+  end
+  print(io, ")")
 end
 
 function equivalent(tile1::Tile, tile2::Tile)::Bool
@@ -223,6 +255,17 @@ function Puzzle(width::Int, height::Int, tiles::Vector{Tile})
   return Puzzle(tiles, grid)
 end
 
+function solved(puzzle::Puzzle)::Bool
+  return length(puzzle.tiles) == count_candidates(puzzle)
+end
+
+function count_candidates(puzzle::Puzzle)::Int
+  count = 0
+  for c in puzzle.grid
+    count += count_candidates(c)
+  end
+  return count
+end
 
 function cell(puzzle::Puzzle, row::Int, column::Int)::Union{Cell, Nothing}
   if row < 1 return nothing end
@@ -232,6 +275,16 @@ function cell(puzzle::Puzzle, row::Int, column::Int)::Union{Cell, Nothing}
   return puzzle.grid[row, column]
 end
   
+function show_candidates(puzzle::Puzzle)
+  for c in puzzle.grid
+    show(c)
+    print("\n")
+    for candidate in c.candidates
+      @printf("  %s\n", candidate)
+    end
+  end
+end
+
 
 function neighbor(puzzle::Puzzle, c::Cell,
                   direction::Direction)::Union{Cell, Nothing}
@@ -308,7 +361,13 @@ ADVANCED_112 = Puzzle(5, 5, [
 
 
 """Edges provides an iterator over the edges of a Puzzle.
-An "edge" is a pair of adjacent cells."""
+An "edge" is a pair of adjacent cells.
+Each iteration produces a tuple (c1ll1, direction1, direction2, cell2)
+such that
+  neighbor(puzzle, cell1, direction1) == cell2
+and
+  neighbor(puzzle, cell2, direction2) == cell2
+"""
 struct Edges
   puzzle::Puzzle
 end
@@ -366,8 +425,8 @@ begin
   local puzzle = Puzzle(4, 4, Vector{Tile}())
   local count = 0
   for i in Edges(puzzle)
-    count += 1
-    cell1, d1, d2, cell2 = i
+     count += 1
+    local cell1, d1, d2, cell2 = i
     # show(i)
     # print("\n")
     if cell1 != nothing
@@ -386,14 +445,47 @@ LinkCountSet(c::Candidate, direction::Direction) =
   LinkCountSet(link_count(c, direction))
 
 # This is a convenience for dealing with the bounds of the grid.
-LiinkCountSet(::Nothing) = LinkCountSeet()
+# The bounding edges of the cell grid have LinkCount O, as distinct
+# from the empty LinkCountSet.
+LinkCountSet(::Nothing, ::Direction) = LinkCountSet(O)
 
+"""The LinkCountSet of a Cell is the union of the LinklCountSets of its
+current candidates."""
 function LinkCountSet(c::Cell, direction::Direction)
   local result = LinkCountSet()
   for candidate in c.candidates
     result |= LinkCountSet(candidate, direction)
   end
   return result
+end
+
+begin
+  # Test LinkCountSet on Candidate.
+  local puzzle = Puzzle(1, 1, [
+    Tile(I, II, III, IIII, rotates=false)
+  ])
+  local c1 = cell(puzzle, 1, 1)
+  @test LinkCountSet(c1.candidates[1], UP) == LinkCountSet(I)
+  @test LinkCountSet(c1.candidates[1], RIGHT) == LinkCountSet(II)
+  @test LinkCountSet(c1.candidates[1], DOWN) == LinkCountSet(III)
+  @test LinkCountSet(c1.candidates[1], LEFT) == LinkCountSet(IIII)
+  @test LinkCountSet(c1, UP) == LinkCountSet(I)
+  @test LinkCountSet(c1, RIGHT) == LinkCountSet(II)
+  @test LinkCountSet(c1, DOWN) == LinkCountSet(III)
+  @test LinkCountSet(c1, LEFT) == LinkCountSet(IIII)
+end
+
+begin
+  # Thest LinkCountSet on Cell.
+  local puzzle = Puzzle(1, 1, [
+    Tile(I, II, II, I),
+    Tile(I, I, I, O, rotates=false)
+  ])
+  local c1 = cell(puzzle, 1, 1)
+  @test LinkCountSet(c1, UP) == (I | II)
+  @test LinkCountSet(c1, RIGHT) == (I | II)
+  @test LinkCountSet(c1, DOWN) == (I | II)
+  @test LinkCountSet(c1, LEFT) == (O | I | II)
 end
 
 begin
@@ -410,18 +502,82 @@ end
 
 
 struct Effect
-  # Total number of candidates across all Cells before and after rule is
-  # applied:
-  before::Int
-  after::Int
   cell::Cell
   removed::Vector{Candidate}
 end
 
+function do_it(effect::Effect)
+  setdiff!(effect.cell.candidates, effect.removed)
+end
+
 struct LogEntry
   rule::Function
+  # Total number of candidates across all Cells before and after rule is
+  # applied:
+  before::Int
+  after::Int
   effects::Vector{Effect}
 end
 
 Log = Vector{LogEntry}
+
+
+# function the_only_candidate(puzzle::Puzzle)::Vector{Effect}
+#   # If a tile is the only candidate for some Cell then it can't be
+#   # anywhere else.
+#   # AM I CONVINCED THIS IS AN APPROPRIATE RULE?  A Cell could be empty.
+#   local effects = Vector{Effect}()
+#   for c1 in puzzle.grid
+#     if length(c1.candidates) != 1
+#       for c2 in puzzle.grid
+#         if c2 === c1 continue end
+#         push!(effects, Effect(c2, [c1.candidates[1]]))
+#       end
+#   end
+#   return effects
+# end
+
+
+function the_only_place(puzzle::Puzzle)::Vector{Effect}
+  # If a tile can only be in one Cell then no other Tile can be in that Cell.
+  local effects = Vector{Effect}()
+  for tile in puzzle.tiles
+    local in_cell = nothing
+    for c in puzzle.grid
+      if has_candidate(c, tile)
+        if in_cell == nothing
+          in_cell = c
+        else
+          # tileis present in more than one cell.  Give up on it.
+          in_cell = nothing
+          break
+        end
+      end
+    end
+    if in_cell != nothing
+      # Thou shalt have no other Tiles before me.
+      local remove = filter(candidate -> candidate.tile != tile,
+                            in_cell.candidates)
+      if length(remove) > 0
+        push!(effects, Effect(in_cell, remove))
+      end
+    end
+  end
+  return effects
+end
+
+begin
+  # Test the_only_place.
+  local puzzle = Puzzle(2, 2, [
+    Tile(O, I, II, O, row=1, col=1),
+    Tile(IIII, IIII, IIII, IIII, rotates=false)
+  ])
+  @test count_candidates(cell(puzzle, 1, 1)) == 5
+  @test count_candidates(cell(puzzle, 1, 2)) == 1
+  @test count_candidates(puzzle) == 8
+  map(do_it, the_only_place(puzzle))
+  @test count_candidates(cell(puzzle, 1, 1)) == 4
+  @test count_candidates(cell(puzzle, 1, 2)) == 1
+  @test count_candidates(puzzle) == 7
+end
 
