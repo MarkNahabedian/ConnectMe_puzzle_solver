@@ -1,4 +1,5 @@
-# A solver for the "Connect Me logic puzzle" Android app.
+# A constraint based solver for the "Connect Me - Logic Puzzle"
+# Android app developed by Viktor Bohush.
 
 
 using Printf
@@ -451,7 +452,11 @@ LinkCountSet(::Nothing, ::Direction) = LinkCountSet(O)
 
 """The LinkCountSet of a Cell is the union of the LinklCountSets of its
 current candidates."""
-function LinkCountSet(c::Cell, direction::Direction)
+function LinkCountSet(c::Cell, direction::Direction)::LinkCountSet
+  # An empty Cell presents LinkCount O in alldirections.
+  if length(c.candidates) == 0
+    return LinkCountSet(O)
+  end
   local result = LinkCountSet()
   for candidate in c.candidates
     result |= LinkCountSet(candidate, direction)
@@ -506,6 +511,12 @@ struct Effect
   removed::Vector{Candidate}
 end
 
+count_candidates(effect::Effect) = length(effect.removed)
+
+count_candidates(effects::Vector{Effect}) = reduce(+, map(count_candidates, effects))
+
+do_it(effects::Vector{Effect}) = map(do_it, effects)
+
 function do_it(effect::Effect)
   setdiff!(effect.cell.candidates, effect.removed)
 end
@@ -518,6 +529,8 @@ struct LogEntry
   after::Int
   effects::Vector{Effect}
 end
+
+count_candidates(le::LogEntry) = count_candidates(le.effects)
 
 Log = Vector{LogEntry}
 
@@ -575,9 +588,126 @@ begin
   @test count_candidates(cell(puzzle, 1, 1)) == 5
   @test count_candidates(cell(puzzle, 1, 2)) == 1
   @test count_candidates(puzzle) == 8
-  map(do_it, the_only_place(puzzle))
+  do_it(the_only_place(puzzle))
   @test count_candidates(cell(puzzle, 1, 1)) == 4
   @test count_candidates(cell(puzzle, 1, 2)) == 1
   @test count_candidates(puzzle) == 7
+end
+
+
+function common_edge_constrains_link_counts(puzzle::Puzzle)::Vector{Effect}
+  local effects = Vector{Effect}()
+  for e in Edges(puzzle)
+    local cell1, d1, d2, cell2 = e
+    local common = LinkCountSet(cell1, d1) & LinkCountSet(cell2, d2)
+    local remove1 = Vector{Candidate}()
+    local remove2 = Vector{Candidate}()
+    function removal(cell, direction, rm)
+      if cell == nothing return end
+      for candidate in cell.candidates
+        # Empty intersection?
+        if isempty(common & LinkCountSet(candidate, direction))
+          # @printf("Remove %s %s %s %s %s\n", cell, direction, common, LinkCountSet(candidate, direction), candidate)
+          push!(rm, candidate)
+        end
+      end
+    end
+    removal(cell1, d1, remove1)
+    removal(cell2, d2, remove2)
+    if cell1 != nothing && length(remove1) > 0
+      push!(effects, Effect(cell1, remove1))
+    end
+    if cell2 != nothing && length(remove2) > 0
+      push!(effects, Effect(cell2, remove2))
+    end
+  end
+  return effects
+end
+
+begin
+  local puzzle = Puzzle(2, 2, [
+    Tile(II, O, O, O, row=1, col=1),
+    Tile(O, O, O, II, row=1, col=2, rotates=false)
+  ])
+  @test count_candidates(puzzle) == 5
+  do_it(common_edge_constrains_link_counts(puzzle))
+  @test count_candidates(puzzle) == 2
+end
+
+begin
+  local puzzle = Puzzle(2, 2, [
+    Tile(I, O, O, O,row=1,col=1),
+    Tile(I, O, O, O, rotates=false)
+  ])
+  @test count_candidates(puzzle) == 8
+  do_it(the_only_place(puzzle))
+  @test count_candidates(puzzle) == 7
+  do_it(common_edge_constrains_link_counts(puzzle))
+  @test count_candidates(puzzle) == 2
+end
+
+
+global constraints = [
+  common_edge_constrains_link_counts,
+  the_only_place
+]
+
+function do_constraints(puzzle::Puzzle, log=Log)::Log
+  local count = count_candidates(puzzle)
+  while true
+    for constraint in constraints
+      effects = constraint(puzzle)
+      local before = count_candidates(puzzle)
+      do_it(effects)
+      local after = count_candidates(puzzle)
+      local log_entry = LogEntry(constraint, before, after, effects)
+      push!(log, log_entry)
+      @printf("  %s removes %d candidates\n", constraint, count_candidates(log_entry))
+    end
+    local after_count = count_candidates(puzzle)
+    if count == after_count break end
+    count = after_count
+  end
+  return log
+end
+
+
+begin
+  local puzzle = Puzzle(3, 3, [
+    Tile(O, O, II, I, row=2, col=1),   # 1 Cell, 4 rotations
+    Tile(I, O, O, O, rotates=false),   # 9 Cells, 1 rotation
+    Tile(II, O, O, O)                  # 9 Cells, 4 rotations
+  ])
+  @test count_candidates(puzzle) == 4 + 9 + 4 * 9
+  local log = Log()
+  do_constraints(puzzle, log)
+  show_candidates(puzzle)
+  if solved(puzzle)
+    print("SOLVED!\n")
+  end
+end
+
+
+# # I've not found a way to filter the methods by return type.
+# function constraints()
+#   local found = Vector{Any}()
+#   for m in methodswith(Puzzle)
+#     if length(m.sig) == 2
+#       push!(found, m)
+#     end
+#   end
+#   return found
+# end
+
+
+begin
+  print("\n\n\nADVANCED_112\n")
+  puzzle = ADVANCED_112
+  local log = Log()
+  do_constraints(puzzle, log)
+  show_candidates(puzzle)
+  if solved(puzzle)
+    print("SOLVED!\n")
+  end
 end
 
