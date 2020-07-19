@@ -115,6 +115,9 @@ struct Tile
   end
 end
 
+"""Return a Tile that models an empty Cell."""
+Tile(row::Int, col::Int) = Tile(O, O, O, O, rotates=false, row=row, col=col)
+
 function Base.show(io::IO, tile::Tile)
   print(io, "Tile(")
   local first = true
@@ -168,6 +171,25 @@ end
 
 @test link_count(Tile(IIII, III, I, O), RIGHT, 0) == III
 
+"""Ruturn the set of distinct rotations of a tile, taking symetry into account."""
+function rotations(tile::Tile)
+  if tile.rotates
+    if link_count(tile, UP, 0) == link_count(tile, DOWN, 0) &&
+       link_count(tile, LEFT, 0) == link_count(tile, RIGHT, 0)
+       # 180 degree symetry
+       if link_count(tile, UP, 0) == link_count(tile, RIGHT, 0)
+         # full rotational symetry
+         return [0]
+       else
+         return [0, 2]
+       end
+    else
+      return [0, 1, 2, 3]
+    end
+  else
+    return [0]
+  end
+end
 
 """Create all possible Candidates for the Cell and add them."""
 function add_candidates(cell::Cell, tile::Tile)
@@ -179,24 +201,7 @@ function add_candidates(cell::Cell, tile::Tile)
        tile.restricted_to_column == cell.column)
     return
   end
-  local rotations =
-    if tile.rotates
-      if link_count(tile, UP, 0) == link_count(tile, DOWN, 0) &&
-         link_count(tile, UP, 0) == link_count(tile, DOWN, 0)
-         # 180 degree symetry
-         if link_count(tile, UP, 0) == link_count(tile, RIGHT, 0)
-           # full rotational symetry
-           [0]
-         else
-           [0, 2]
-         end
-      else
-        [0, 1, 2, 3]
-      end
-    else
-      [0]
-    end
-  for rotation in rotations
+  for rotation in rotations(tile)
     push!(cell.candidates, Candidate(tile, rotation))
   end
 end
@@ -248,6 +253,11 @@ function Puzzle(width::Int, height::Int, tiles::Vector{Tile})
     for column = 1:width
       local cell = Cell(row, column)
       grid[row, column] = cell
+      # A Cell can be empty -- having no Tile.
+      # For simplicity we add a Candidate which uses a tile
+      # that models an empty cell.
+      add_candidates(cell, Tile(row, column))
+      # Add candidates for the specified Tiles:
       for tile in tiles
         add_candidates(cell, tile)
       end
@@ -256,8 +266,22 @@ function Puzzle(width::Int, height::Int, tiles::Vector{Tile})
   return Puzzle(tiles, grid)
 end
 
+function estimate_initial_candidates(puzzle::Puzzle)::Int
+  local count = rows(puzzle) * columns(puzzle)   # empty cell surrogate tiles.
+  for tile in puzzle.tiles
+    rot = length(rotations(tile))
+    r = tile.restricted_to_row == nothing ?
+        rows(puzzle) : 1
+    c = tile.restricted_to_column == nothing ?
+        columns(puzzle) : 1
+    count += rot * r * c
+  end
+  return count
+end
+
 function solved(puzzle::Puzzle)::Bool
-  return length(puzzle.tiles) == count_candidates(puzzle)
+  return all(c -> count_candidates(c) == 1,
+             puzzle.grid)
 end
 
 function count_candidates(puzzle::Puzzle)::Int
@@ -334,9 +358,9 @@ begin
   @test neighbor(puzzle, cell(puzzle, 2, 2), DOWN) === cell(puzzle, 3, 2)
   @test neighbor(puzzle, cell(puzzle, 2, 2), LEFT) === cell(puzzle, 2, 1)
   @test neighbor(puzzle, cell(puzzle, 2, 2), RIGHT) === cell(puzzle, 2, 3)
-  @test length(puzzle.grid[1, 3].candidates) == 5
-  @test length(puzzle.grid[1, 1].candidates) == 6
-  @test length(puzzle.grid[3, 2].candidates) == 11
+  @test length(puzzle.grid[1, 3].candidates) == 6
+  @test length(puzzle.grid[1, 1].candidates) == 7
+  @test length(puzzle.grid[3, 2].candidates) == 12
 end
 
 
@@ -470,27 +494,28 @@ begin
     Tile(I, II, III, IIII, rotates=false)
   ])
   local c1 = cell(puzzle, 1, 1)
-  @test LinkCountSet(c1.candidates[1], UP) == LinkCountSet(I)
-  @test LinkCountSet(c1.candidates[1], RIGHT) == LinkCountSet(II)
-  @test LinkCountSet(c1.candidates[1], DOWN) == LinkCountSet(III)
-  @test LinkCountSet(c1.candidates[1], LEFT) == LinkCountSet(IIII)
-  @test LinkCountSet(c1, UP) == LinkCountSet(I)
-  @test LinkCountSet(c1, RIGHT) == LinkCountSet(II)
-  @test LinkCountSet(c1, DOWN) == LinkCountSet(III)
-  @test LinkCountSet(c1, LEFT) == LinkCountSet(IIII)
+  @printf("%s %s\n", LinkCountSet(c1.candidates[1], UP), (O | I))
+  @test LinkCountSet(c1.candidates[2], UP) == LinkCountSet(I)
+  @test LinkCountSet(c1.candidates[2], RIGHT) == LinkCountSet(II)
+  @test LinkCountSet(c1.candidates[2], DOWN) == LinkCountSet(III)
+  @test LinkCountSet(c1.candidates[2], LEFT) == LinkCountSet(IIII)
+  @test LinkCountSet(c1, UP) == (O | I)
+  @test LinkCountSet(c1, RIGHT) == (O | II)
+  @test LinkCountSet(c1, DOWN) == (O | III)
+  @test LinkCountSet(c1, LEFT) == (O | IIII)
 end
 
 begin
-  # Thest LinkCountSet on Cell.
+  # Test LinkCountSet on Cell.
   local puzzle = Puzzle(1, 1, [
     Tile(I, II, II, I),
     Tile(I, I, I, O, rotates=false)
   ])
   local c1 = cell(puzzle, 1, 1)
-  @test LinkCountSet(c1, UP) == (I | II)
-  @test LinkCountSet(c1, RIGHT) == (I | II)
-  @test LinkCountSet(c1, DOWN) == (I | II)
-  @test LinkCountSet(c1, LEFT) == (O | I | II)
+  @test LinkCountSet(c1, UP) == O | I | II
+  @test LinkCountSet(c1, RIGHT) == O | I | II
+  @test LinkCountSet(c1, DOWN) == O | I | II
+  @test LinkCountSet(c1, LEFT) == O | I | II
 end
 
 begin
@@ -500,9 +525,9 @@ begin
     Tile(III, IIII, III, IIII, rotates=false, col=3)
   ]
   local puzzle = Puzzle(4, 4, tiles)
-  @test LinkCountSet(cell(puzzle, 1, 1), RIGHT) == I | II
-  @test LinkCountSet(cell(puzzle, 1, 3), RIGHT) == I | II | IIII
-  @test LinkCountSet(cell(puzzle, 1, 3), DOWN) == I | II | III
+  @test LinkCountSet(cell(puzzle, 1, 1), RIGHT) == O | I | II
+  @test LinkCountSet(cell(puzzle, 1, 3), RIGHT) == O | I | II | IIII
+  @test LinkCountSet(cell(puzzle, 1, 3), DOWN) == O | I | II | III
 end
 
 
@@ -528,6 +553,14 @@ struct LogEntry
   before::Int
   after::Int
   effects::Vector{Effect}
+end
+
+function report(log_entry::LogEntry)
+  @printf("%40s %4d %4d %4d\n",
+          log_entry.rule,
+          log_entry.before,
+          count_candidates(log_entry.effects),
+          log_entry.after)
 end
 
 count_candidates(le::LogEntry) = count_candidates(le.effects)
@@ -585,13 +618,13 @@ begin
     Tile(O, I, II, O, row=1, col=1),
     Tile(IIII, IIII, IIII, IIII, rotates=false)
   ])
-  @test count_candidates(cell(puzzle, 1, 1)) == 5
-  @test count_candidates(cell(puzzle, 1, 2)) == 1
-  @test count_candidates(puzzle) == 8
+  @test count_candidates(cell(puzzle, 1, 1)) == 6
+  @test count_candidates(cell(puzzle, 1, 2)) == 2
+  @test count_candidates(puzzle) == 12
   do_it(the_only_place(puzzle))
   @test count_candidates(cell(puzzle, 1, 1)) == 4
-  @test count_candidates(cell(puzzle, 1, 2)) == 1
-  @test count_candidates(puzzle) == 7
+  @test count_candidates(cell(puzzle, 1, 2)) == 2
+  @test count_candidates(puzzle) == 10
 end
 
 
@@ -625,13 +658,14 @@ function common_edge_constrains_link_counts(puzzle::Puzzle)::Vector{Effect}
 end
 
 begin
+  # Do we find the correct rotation of the first Tile to match the seconmd.
   local puzzle = Puzzle(2, 2, [
     Tile(II, O, O, O, row=1, col=1),
     Tile(O, O, O, II, row=1, col=2, rotates=false)
   ])
-  @test count_candidates(puzzle) == 5
+  @test count_candidates(puzzle) == 9
   do_it(common_edge_constrains_link_counts(puzzle))
-  @test count_candidates(puzzle) == 2
+  @test count_candidates(puzzle) == 6
 end
 
 begin
@@ -639,11 +673,14 @@ begin
     Tile(I, O, O, O,row=1,col=1),
     Tile(I, O, O, O, rotates=false)
   ])
-  @test count_candidates(puzzle) == 8
+  @test count_candidates(puzzle) == 12
   do_it(the_only_place(puzzle))
-  @test count_candidates(puzzle) == 7
+  @test count_candidates(puzzle) == 10
+  # We need to run common_edge_constrains_link_counts twice
   do_it(common_edge_constrains_link_counts(puzzle))
-  @test count_candidates(puzzle) == 2
+  do_it(common_edge_constrains_link_counts(puzzle))
+  @test count_candidates(puzzle) == 4
+  @test solved(puzzle)
 end
 
 
@@ -673,12 +710,13 @@ end
 
 
 begin
+  print("\n\n\n")
   local puzzle = Puzzle(3, 3, [
     Tile(O, O, II, I, row=2, col=1),   # 1 Cell, 4 rotations
     Tile(I, O, O, O, rotates=false),   # 9 Cells, 1 rotation
     Tile(II, O, O, O)                  # 9 Cells, 4 rotations
   ])
-  @test count_candidates(puzzle) == 4 + 9 + 4 * 9
+  @test count_candidates(puzzle) == 4 + 9 + 4 * 9 + 9
   local log = Log()
   do_constraints(puzzle, log)
   show_candidates(puzzle)
@@ -701,13 +739,38 @@ end
 
 
 begin
-  print("\n\n\nADVANCED_112\n")
-  puzzle = ADVANCED_112
+  print("\n\n\n")
+  local puzzle = Puzzle(3, 3, [
+    Tile(I, II, O, O, row=2, col=2),
+    Tile(I, O, O, O, col = 3),
+    Tile(II, O, O, O, row=1)
+  ])
+  @test estimate_initial_candidates(puzzle) == count_candidates(puzzle)
   local log = Log()
   do_constraints(puzzle, log)
   show_candidates(puzzle)
+  map(report, log)
   if solved(puzzle)
     print("SOLVED!\n")
   end
 end
+
+
+# begin
+#   print("\n\n\nADVANCED_112\n")
+#   local puzzle = ADVANCED_112
+#   @test estimate_initial_candidates(puzzle) == count_candidates(puzzle)
+#   @printf("Initially %d candidates.\n", count_candidates(puzzle))
+#   local log = Log()
+#   do_constraints(puzzle, log)
+#   show_candidates(puzzle)
+#   map(report, log)
+#   if solved(puzzle)
+#     print("SOLVED!\n")
+#   end
+# end
+
+
+
+
 
