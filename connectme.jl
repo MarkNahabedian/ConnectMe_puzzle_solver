@@ -756,21 +756,15 @@ begin
 end
 
 
-# begin
-#   print("\n\n\nADVANCED_112\n")
-#   local puzzle = ADVANCED_112
-#   @test estimate_initial_candidates(puzzle) == count_candidates(puzzle)
-#   @printf("Initially %d candidates.\n", count_candidates(puzzle))
-#   local log = Log()
-#   do_constraints(puzzle, log)
-#   show_candidates(puzzle)
-#   map(report, log)
-#   if solved(puzzle)
-#     print("SOLVED!\n")
-#   end
-# end
-
-
-
-
+begin
+  print("\n\n\nADVANCED_112\n")
+  local puzzle = ADVANCED_112
+  @test estimate_initial_candidates(puzzle) == count_candidates(puzzle)
+  @printf("Initially %d candidates.\n", count_candidates(puzzle))
+  local log = Log()
+  do_constraints(puzzle, log)
+  show_candidates(puzzle)
+  map(report, log)
+  @test solved(puzzle)
+end
 
