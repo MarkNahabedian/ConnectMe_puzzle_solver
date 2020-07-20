@@ -222,6 +222,19 @@ function has_candidate(cell::Cell, tile::Tile)::Bool
   return false
 end
 
+function cells_with_candidate(puzzle::Puzzle, tile::Tile)
+  return filter(cell -> has_candidate(cell, tile),
+                puzzle.grid)
+end
+
+"""Find Cells of Puzzle that have a candidate that presents the
+same link counts as the specified Candidate."""
+function cells_with_candidate(puzzle::Puzzle, candidate::Candidate)
+  return filter(c -> any(can -> equivalent(can, candidate)
+                         c.candidates)
+                puzzle.grid)
+end
+
 
 """Candidate represents a possible orientation of a Tile within a Cell.
 Candidates are added to Cells when the puzzle is created.  Candidates are
@@ -233,6 +246,16 @@ end
 
 function link_count(candidate::Candidate, direction::Direction)
   return link_count(candidate.tile, direction, candidate.rotation)
+end
+
+"""Return true iff the two candidates present the same link counts."""
+function equivalent(c1::Candidate, c2::Candidate)
+  for d in instances(Direction)
+    if LinkCount(c1, d) != LinkCount(c2, d)
+      return false
+    end
+  end
+  return true
 end
 
 
@@ -397,6 +420,7 @@ struct Edges
   puzzle::Puzzle
 end
 
+# Convenience trampolene methods:
 rows(e::Edges) = rows(e.puzzle)
 columns(e::Edges) = columns(e.puzzle)
 cell(e::Edges, row::Int, col::Int) = cell(e.puzzle, row, col)
