@@ -2,6 +2,7 @@
 # Android app developed by Viktor Bohush.
 
 
+using DataStructures
 using Printf
 using StaticArrays
 using Test
@@ -106,17 +107,21 @@ struct Tile
   # cell of the specified column.
   restricted_to_column::Union{Int, Nothing}
   rotates::Bool
+  # If optional is false then the Tile must be present in the solved Puzzle.
+  optional::Bool
   # The number of links that the tile presents in a given direction.
   link_counts::Vector{LinkCount}     # indexed by Direction, length 4.
 
-  function Tile(link_counts::Vararg{LinkCount, 4}; row=nothing, col=nothing, rotates=true)
-    return new(row, col, rotates,
+  function Tile(link_counts::Vararg{LinkCount, 4}; row=nothing, col=nothing,
+                rotates=true, optional=false)
+    return new(row, col, rotates, optional, 
                [lc for lc in link_counts])
   end
 end
 
 """Return a Tile that models an empty Cell."""
-Tile(row::Int, col::Int) = Tile(O, O, O, O, rotates=false, row=row, col=col)
+Tile(row::Int, col::Int) = Tile(O, O, O, O, rotates=false, row=row, col=col,
+                                optional=true)
 
 function Base.show(io::IO, tile::Tile)
   print(io, "Tile(")
@@ -129,13 +134,16 @@ function Base.show(io::IO, tile::Tile)
     show(io, lc)
   end
   if tile.rotates == false
-    print(io, ", rotates=false")
+    print(io, ", rotates=%s", tile.rotates)
   end
   if tile.restricted_to_row != nothing
     @printf(io, ", row=%d", tile.restricted_to_row)
   end
   if tile.restricted_to_column != nothing
     @printf(io, ", col=%d", tile.restricted_to_column)
+  end
+  if tile.optional
+    @printf(io, ", optional=%s", tile.optional)
   end
   print(io, ")")
 end
@@ -518,7 +526,6 @@ begin
     Tile(I, II, III, IIII, rotates=false)
   ])
   local c1 = cell(puzzle, 1, 1)
-  @printf("%s %s\n", LinkCountSet(c1.candidates[1], UP), (O | I))
   @test LinkCountSet(c1.candidates[2], UP) == LinkCountSet(I)
   @test LinkCountSet(c1.candidates[2], RIGHT) == LinkCountSet(II)
   @test LinkCountSet(c1.candidates[2], DOWN) == LinkCountSet(III)
@@ -598,6 +605,8 @@ Log = Vector{LogEntry}
 #   # AM I CONVINCED THIS IS AN APPROPRIATE RULE?  A Cell could be empty.
 #   local effects = Vector{Effect}()
 #   for c1 in puzzle.grid
+      # This isn't the right test.  We want to test that there's only
+      # one Tile, not only one Candidate.
 #     if length(c1.candidates) != 1
 #       for c2 in puzzle.grid
 #         if c2 === c1 continue end
@@ -612,6 +621,9 @@ function the_only_place(puzzle::Puzzle)::Vector{Effect}
   # If a tile can only be in one Cell then no other Tile can be in that Cell.
   local effects = Vector{Effect}()
   for tile in puzzle.tiles
+    if tile.optional
+      continue
+    end
     local in_cell = nothing
     for c in puzzle.grid
       if has_candidate(c, tile)
@@ -723,7 +735,7 @@ function do_constraints(puzzle::Puzzle, log=Log)::Log
       local after = count_candidates(puzzle)
       local log_entry = LogEntry(constraint, before, after, effects)
       push!(log, log_entry)
-      @printf("  %s removes %d candidates\n", constraint, count_candidates(log_entry))
+      # @printf("  %s removes %d candidates\n", constraint, count_candidates(log_entry))
     end
     local after_count = count_candidates(puzzle)
     if count == after_count break end
@@ -734,7 +746,6 @@ end
 
 
 begin
-  print("\n\n\n")
   local puzzle = Puzzle(3, 3, [
     Tile(O, O, II, I, row=2, col=1),   # 1 Cell, 4 rotations
     Tile(I, O, O, O, rotates=false),   # 9 Cells, 1 rotation
@@ -743,10 +754,10 @@ begin
   @test count_candidates(puzzle) == 4 + 9 + 4 * 9 + 9
   local log = Log()
   do_constraints(puzzle, log)
-  show_candidates(puzzle)
-  if solved(puzzle)
-    print("SOLVED!\n")
-  end
+  # TODO: This puzzle doesn't get solved because the O, O, O, O Tiles
+  # form a consistent solution.
+  # show_candidates(puzzle)
+  # @test solved(puzzle)
 end
 
 
@@ -763,7 +774,6 @@ end
 
 
 begin
-  print("\n\n\n")
   local puzzle = Puzzle(3, 3, [
     Tile(I, II, O, O, row=2, col=2),
     Tile(I, O, O, O, col = 3),
@@ -774,9 +784,7 @@ begin
   do_constraints(puzzle, log)
   show_candidates(puzzle)
   map(report, log)
-  if solved(puzzle)
-    print("SOLVED!\n")
-  end
+  # @test solved(puzzle)
 end
 
 
@@ -788,7 +796,7 @@ begin
   local log = Log()
   do_constraints(puzzle, log)
   # show_candidates(puzzle)
-  map(report, log)
+  # map(report, log)
   @test solved(puzzle)
 end
 
