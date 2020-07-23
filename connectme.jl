@@ -298,8 +298,24 @@ function estimate_initial_candidates(puzzle::Puzzle)::Int
 end
 
 function solved(puzzle::Puzzle)::Bool
-  return all(c -> count_candidates(c) == 1,
-             puzzle.grid)
+  if !all(c -> count_candidates(c) == 1,
+          puzzle.grid)
+    return false
+  end
+  # Each tile is in exactly ione Cell.
+  for tile in puzzle.tiles
+    if length(cells_with_candidate(puzzle, tile)) != 1
+      return false
+    end
+  end
+  # Edges are correct
+  for e in Edges(puzzle)
+    (cell1, d1, d2, cell2) = e
+    if LinkCountSet(cell1, d1) != LinkCountSet(cell2, d2)
+      return false
+    end
+  end
+  return true
 end
 
 function cells_with_candidate(puzzle::Puzzle, tile::Tile)
@@ -799,4 +815,5 @@ begin
   # map(report, log)
   @test solved(puzzle)
 end
+
 
