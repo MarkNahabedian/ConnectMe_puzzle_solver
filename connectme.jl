@@ -3,6 +3,7 @@
 
 
 using DataStructures
+using InteractiveUtils
 using Printf
 using StaticArrays
 using Test
@@ -578,6 +579,11 @@ begin
 end
 
 
+"""To facilitate finding our constraint rule functions, we define
+them as subtypes of Constraint."""
+abstract type Constraint; end
+
+
 struct Effect
   cell::Cell
   removed::Vector{Candidate}
@@ -594,7 +600,7 @@ function do_it(effect::Effect)
 end
 
 struct LogEntry
-  rule::Function
+  rule::Constraint
   # Total number of candidates across all Cells before and after rule is
   # applied:
   before::Int
@@ -633,7 +639,8 @@ Log = Vector{LogEntry}
 # end
 
 
-function the_only_place(puzzle::Puzzle)::Vector{Effect}
+struct TheOnlyPlace <: Constraint; end
+function (r::TheOnlyPlace)(puzzle::Puzzle)::Vector{Effect}
   # If a tile can only be in one Cell then no other Tile can be in that Cell.
   local effects = Vector{Effect}()
   for tile in puzzle.tiles
@@ -665,7 +672,7 @@ function the_only_place(puzzle::Puzzle)::Vector{Effect}
 end
 
 begin
-  # Test the_only_place.
+  # Test TheOnlyPlace.
   local puzzle = Puzzle(2, 2, [
     Tile(O, I, II, O, row=1, col=1),
     Tile(IIII, IIII, IIII, IIII, rotates=false)
@@ -673,14 +680,15 @@ begin
   @test count_candidates(cell(puzzle, 1, 1)) == 6
   @test count_candidates(cell(puzzle, 1, 2)) == 2
   @test count_candidates(puzzle) == 12
-  do_it(the_only_place(puzzle))
+  do_it(TheOnlyPlace()(puzzle))
   @test count_candidates(cell(puzzle, 1, 1)) == 4
   @test count_candidates(cell(puzzle, 1, 2)) == 2
   @test count_candidates(puzzle) == 10
 end
 
 
-function common_edge_constrains_link_counts(puzzle::Puzzle)::Vector{Effect}
+struct CommonEdgeConstrainsLinkCounts <: Constraint; end
+function (r::CommonEdgeConstrainsLinkCounts)(puzzle::Puzzle)::Vector{Effect}
   local effects = Vector{Effect}()
   for e in Edges(puzzle)
     local cell1, d1, d2, cell2 = e
@@ -716,7 +724,7 @@ begin
     Tile(O, O, O, II, row=1, col=2, rotates=false)
   ])
   @test count_candidates(puzzle) == 9
-  do_it(common_edge_constrains_link_counts(puzzle))
+  do_it(CommonEdgeConstrainsLinkCounts()(puzzle))
   @test count_candidates(puzzle) == 6
 end
 
@@ -726,25 +734,21 @@ begin
     Tile(I, O, O, O, rotates=false)
   ])
   @test count_candidates(puzzle) == 12
-  do_it(the_only_place(puzzle))
+  do_it(TheOnlyPlace()(puzzle))
   @test count_candidates(puzzle) == 10
-  # We need to run common_edge_constrains_link_counts twice
-  do_it(common_edge_constrains_link_counts(puzzle))
-  do_it(common_edge_constrains_link_counts(puzzle))
+  # We need to run CommonEdgeConstrainsLinkCounts twice
+  do_it(CommonEdgeConstrainsLinkCounts()(puzzle))
+  do_it(CommonEdgeConstrainsLinkCounts()(puzzle))
   @test count_candidates(puzzle) == 4
   @test solved(puzzle)
 end
 
 
-global constraints = [
-  common_edge_constrains_link_counts,
-  the_only_place
-]
-
 function do_constraints(puzzle::Puzzle, log=Log)::Log
   local count = count_candidates(puzzle)
   while true
-    for constraint in constraints
+    for C in subtypes(Constraint)
+      local constraint = C()
       effects = constraint(puzzle)
       local before = count_candidates(puzzle)
       do_it(effects)
@@ -775,19 +779,6 @@ begin
   # show_candidates(puzzle)
   # @test solved(puzzle)
 end
-
-
-# # I've not found a way to filter the methods by return type.
-# function constraints()
-#   local found = Vector{Any}()
-#   for m in methodswith(Puzzle)
-#     if length(m.sig) == 2
-#       push!(found, m)
-#     end
-#   end
-#   return found
-# end
-
 
 begin
   local puzzle = Puzzle(3, 3, [
