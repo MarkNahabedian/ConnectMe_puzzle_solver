@@ -9,6 +9,20 @@ using StaticArrays
 using Test
 
 
+function test()
+  test_neighbor_and_puzzle_construction()
+  test_edges_iteration()
+  test_LinkCountSet()
+  test_TheOnlyPlace()
+  test_cell_LinkCountSet()
+  test_solve_1()
+  test_solve_2()
+  test_CommonEdgeConstrainsLinkCounts()
+  test_solve_advanced_112()
+  test_solve_advances_125()
+end
+
+
 mutable struct Cell
   row::Int 
   column::Int
@@ -135,7 +149,7 @@ function Base.show(io::IO, tile::Tile)
     show(io, lc)
   end
   if tile.rotates == false
-    print(io, ", rotates=%s", tile.rotates)
+    @printf(io, ", rotates=%s", tile.rotates)
   end
   if tile.restricted_to_row != nothing
     @printf(io, ", row=%d", tile.restricted_to_row)
@@ -247,7 +261,7 @@ end
 """Return true iff the two candidates present the same link counts."""
 function equivalent(c1::Candidate, c2::Candidate)
   for d in instances(Direction)
-    if LinkCount(c1, d) != LinkCount(c2, d)
+    if LinkCountSet(c1, d) != LinkCountSet(c2, d)
       return false
     end
   end
@@ -260,6 +274,7 @@ tiles which can be placed in the grid."""
 struct Puzzle
   tiles::Vector{Tile}
   grid::Array{Cell, 2}
+  log                    # ::Log
 end
 
 rows(p::Puzzle) = size(p.grid, 1)
@@ -281,8 +296,9 @@ function Puzzle(width::Int, height::Int, tiles::Vector{Tile})
         add_candidates(cell, tile)
       end
     end
+    
   end
-  return Puzzle(tiles, grid)
+  return Puzzle(tiles, grid, Log())
 end
 
 function estimate_initial_candidates(puzzle::Puzzle)::Int
@@ -389,7 +405,7 @@ begin
                    Tile(I, II, III, IIII)) == true
 end
 
-begin
+function test_neighbor_and_puzzle_construction()
   local tiles = [
     Tile(I, I, I, I),                   # fully symetric, 1 rotation.
     Tile(O, II, III, O, row=1, col=1, rotates=false),
@@ -412,25 +428,27 @@ begin
 end
 
 
-# A ssample puzzle
-ADVANCED_112 = Puzzle(5, 5, [
-  Tile(I, II, O, O),
-  Tile(O, IIII, II, O, row=1),
-  Tile(IIII, O, O, III, rotates=false),
-  Tile(II, O, IIII, III, col=5),
-  Tile(II, O, I, II, col=2),
-  Tile(II, I, III, O, row=3, col=3),
-  Tile(O, II, III, I, rotates=false),
-  Tile(O, I, O, O, col=1, rotates=false),
-  Tile(IIII, O, II, II, rotates=false),
-  Tile(III, III, O, II, row=4),
-  Tile(III, O, O, O, col=4),
-  Tile(III, IIII, III, II),
-  Tile(II, O, II, I),
-  Tile(O, II, II, II, rotates=false),
-  Tile(III, III, I, I, col=3),
-  Tile(III, II, II, IIII)
+# A ssample puzzle from the game
+function advanced_112()
+  return Puzzle(5, 5, [
+    Tile(I, II, O, O),
+    Tile(O, IIII, II, O, row=1),
+    Tile(IIII, O, O, III, rotates=false),
+    Tile(II, O, IIII, III, col=5),
+    Tile(II, O, I, II, col=2),
+    Tile(II, I, III, O, row=3, col=3),
+    Tile(O, II, III, I, rotates=false),
+    Tile(O, I, O, O, col=1, rotates=false),
+    Tile(IIII, O, II, II, rotates=false),
+    Tile(III, III, O, II, row=4),
+    Tile(III, O, O, O, col=4),
+    Tile(III, IIII, III, II),
+    Tile(II, O, II, I),
+    Tile(O, II, II, II, rotates=false),
+    Tile(III, III, I, I, col=3),
+    Tile(III, II, II, IIII)
   ])
+end
 
 
 """Edges provides an iterator over the edges of a Puzzle.
@@ -495,7 +513,7 @@ function Base.iterate(e::Edges, state)
 end
 
 
-begin
+function test_edges_iteration()
   local puzzle = Puzzle(4, 4, Vector{Tile}())
   local count = 0
   for i in Edges(puzzle)
@@ -523,7 +541,7 @@ LinkCountSet(c::Candidate, direction::Direction) =
 # from the empty LinkCountSet.
 LinkCountSet(::Nothing, ::Direction) = LinkCountSet(O)
 
-"""The LinkCountSet of a Cell is the union of the LinklCountSets of its
+"""The LinkCountSet of a Cell is the union of the LinkCountSets of its
 current candidates."""
 function LinkCountSet(c::Cell, direction::Direction)::LinkCountSet
   # An empty Cell presents LinkCount O in alldirections.
@@ -537,7 +555,7 @@ function LinkCountSet(c::Cell, direction::Direction)::LinkCountSet
   return result
 end
 
-begin
+function test_LinkCountSet()
   # Test LinkCountSet on Candidate.
   local puzzle = Puzzle(1, 1, [
     Tile(I, II, III, IIII, rotates=false)
@@ -553,29 +571,25 @@ begin
   @test LinkCountSet(c1, LEFT) == (O | IIII)
 end
 
-begin
+function test_cell_LinkCountSet()
   # Test LinkCountSet on Cell.
-  local puzzle = Puzzle(1, 1, [
+  local puzzle1 = Puzzle(1, 1, [
     Tile(I, II, II, I),
     Tile(I, I, I, O, rotates=false)
   ])
-  local c1 = cell(puzzle, 1, 1)
+  local c1 = cell(puzzle1, 1, 1)
   @test LinkCountSet(c1, UP) == O | I | II
   @test LinkCountSet(c1, RIGHT) == O | I | II
   @test LinkCountSet(c1, DOWN) == O | I | II
   @test LinkCountSet(c1, LEFT) == O | I | II
-end
-
-begin
-  local tiles = [
+  local puzzle2 = Puzzle(4, 4, [
     Tile(I, I, I, I),
     Tile(II, II, II, II),
     Tile(III, IIII, III, IIII, rotates=false, col=3)
-  ]
-  local puzzle = Puzzle(4, 4, tiles)
-  @test LinkCountSet(cell(puzzle, 1, 1), RIGHT) == O | I | II
-  @test LinkCountSet(cell(puzzle, 1, 3), RIGHT) == O | I | II | IIII
-  @test LinkCountSet(cell(puzzle, 1, 3), DOWN) == O | I | II | III
+  ])
+  @test LinkCountSet(cell(puzzle2, 1, 1), RIGHT) == O | I | II
+  @test LinkCountSet(cell(puzzle2, 1, 3), RIGHT) == O | I | II | IIII
+  @test LinkCountSet(cell(puzzle2, 1, 3), DOWN) == O | I | II | III
 end
 
 
@@ -597,6 +611,9 @@ do_it(effects::Vector{Effect}) = map(do_it, effects)
 
 function do_it(effect::Effect)
   setdiff!(effect.cell.candidates, effect.removed)
+  if length(effect.cell.candidates) < 1
+    error("No candidates remaining after", effect)
+  end
 end
 
 struct LogEntry
@@ -671,8 +688,7 @@ function (r::TheOnlyPlace)(puzzle::Puzzle)::Vector{Effect}
   return effects
 end
 
-begin
-  # Test TheOnlyPlace.
+function test_TheOnlyPlace()
   local puzzle = Puzzle(2, 2, [
     Tile(O, I, II, O, row=1, col=1),
     Tile(IIII, IIII, IIII, IIII, rotates=false)
@@ -717,94 +733,166 @@ function (r::CommonEdgeConstrainsLinkCounts)(puzzle::Puzzle)::Vector{Effect}
   return effects
 end
 
-begin
+function test_CommonEdgeConstrainsLinkCounts()
   # Do we find the correct rotation of the first Tile to match the seconmd.
-  local puzzle = Puzzle(2, 2, [
+  local puzzle1 = Puzzle(2, 2, [
     Tile(II, O, O, O, row=1, col=1),
     Tile(O, O, O, II, row=1, col=2, rotates=false)
   ])
-  @test count_candidates(puzzle) == 9
-  do_it(CommonEdgeConstrainsLinkCounts()(puzzle))
-  @test count_candidates(puzzle) == 6
-end
-
-begin
-  local puzzle = Puzzle(2, 2, [
+  @test count_candidates(puzzle1) == 9
+  do_it(CommonEdgeConstrainsLinkCounts()(puzzle1))
+  @test count_candidates(puzzle1) == 6
+  #
+  local puzzle2 = Puzzle(2, 2, [
     Tile(I, O, O, O,row=1,col=1),
     Tile(I, O, O, O, rotates=false)
   ])
-  @test count_candidates(puzzle) == 12
-  do_it(TheOnlyPlace()(puzzle))
-  @test count_candidates(puzzle) == 10
+  @test count_candidates(puzzle2) == 12
+  do_it(TheOnlyPlace()(puzzle2))
+  @test count_candidates(puzzle2) == 10
   # We need to run CommonEdgeConstrainsLinkCounts twice
-  do_it(CommonEdgeConstrainsLinkCounts()(puzzle))
-  do_it(CommonEdgeConstrainsLinkCounts()(puzzle))
-  @test count_candidates(puzzle) == 4
-  @test solved(puzzle)
+  do_it(CommonEdgeConstrainsLinkCounts()(puzzle2))
+  do_it(CommonEdgeConstrainsLinkCounts()(puzzle2))
+  @test count_candidates(puzzle2) == 4
+  @test solved(puzzle2)
 end
 
 
-function do_constraints(puzzle::Puzzle, log=Log)::Log
+function do_constraints(puzzle::Puzzle)
   local count = count_candidates(puzzle)
-  while true
-    for C in subtypes(Constraint)
-      local constraint = C()
-      effects = constraint(puzzle)
-      local before = count_candidates(puzzle)
-      do_it(effects)
-      local after = count_candidates(puzzle)
-      local log_entry = LogEntry(constraint, before, after, effects)
-      push!(log, log_entry)
-      # @printf("  %s removes %d candidates\n", constraint, count_candidates(log_entry))
+  try
+    while true
+      for C in subtypes(Constraint)
+        local constraint = C()
+        effects = constraint(puzzle)
+        local before = count_candidates(puzzle)
+        try  
+          do_it(effects)
+        finally
+          local after = count_candidates(puzzle)
+          local log_entry = LogEntry(constraint, before, after, effects)
+          push!(puzzle.log, log_entry)
+          # @printf("  %s removes %d candidates\n", constraint, count_candidates(log_entry))
+        end
+      end
+      local after_count = count_candidates(puzzle)
+      if count == after_count break end
+      count = after_count
     end
-    local after_count = count_candidates(puzzle)
-    if count == after_count break end
-    count = after_count
+  catch e
+    show(e)
   end
-  return log
 end
 
 
-begin
+function test_solve_1()
   local puzzle = Puzzle(3, 3, [
     Tile(O, O, II, I, row=2, col=1),   # 1 Cell, 4 rotations
     Tile(I, O, O, O, rotates=false),   # 9 Cells, 1 rotation
     Tile(II, O, O, O)                  # 9 Cells, 4 rotations
   ])
   @test count_candidates(puzzle) == 4 + 9 + 4 * 9 + 9
-  local log = Log()
-  do_constraints(puzzle, log)
+  do_constraints(puzzle)
   # TODO: This puzzle doesn't get solved because the O, O, O, O Tiles
   # form a consistent solution.
   # show_candidates(puzzle)
   # @test solved(puzzle)
 end
 
-begin
+function test_solve_2()
   local puzzle = Puzzle(3, 3, [
-    Tile(I, II, O, O, row=2, col=2),
+    Tile(I, II, O, O, row=2, col=2),     # Why is this tile removed? 
     Tile(I, O, O, O, col = 3),
     Tile(II, O, O, O, row=1)
   ])
   @test estimate_initial_candidates(puzzle) == count_candidates(puzzle)
-  local log = Log()
-  do_constraints(puzzle, log)
+  do_constraints(puzzle)
   show_candidates(puzzle)
-  map(report, log)
+  map(report, puzzle.log)
   # @test solved(puzzle)
 end
 
 
-begin
+function test_solve_advanced_112()
   print("\n\n\nADVANCED_112\n")
-  local puzzle = ADVANCED_112
+  local puzzle = advanced_112()
   @test estimate_initial_candidates(puzzle) == count_candidates(puzzle)
   @printf("Initially %d candidates.\n", count_candidates(puzzle))
-  local log = Log()
-  do_constraints(puzzle, log)
-  # show_candidates(puzzle)
-  # map(report, log)
+  do_constraints(puzzle)
+  if !solved(puzzle)
+    show_candidates(puzzle)
+    map(report, puzzle.log)
+  end
   @test solved(puzzle)
 end
 
 
+"""If all of the candidates for a Cell are equivalent in the
+LinkCounts they present then pick the one that is (in some sense)
+least general, lock it in and free the others.  This constraint
+function retuirns after the first positive example it encounters so
+that other rules can act on the outcome."""
+struct PickFromEquivalentTiles <: Constraint; end
+function (r::PickFromEquivalentTiles)(puzzle::Puzzle)::Vector{Effect}
+  local effects = Vector{Effect}()
+  for c in puzzle.grid
+    if length(c.candidates) <= 1
+      continue
+    end
+    if all(can -> equivalent(can, c.candidates[1]), c.candidates)
+        local best_tile
+        local best_score = rows(puzzle) * columns(puzzle) + 1
+        for can in c.candidates
+          local score = length(cells_with_candidate(puzzle, can.tile))
+          if score < best_score
+            best_tile = can.tile
+            best_score = score
+          end
+        end
+        best_tile::Tile
+        local remove = Vector{Candidate}()
+        for can in c.candidates
+          if can.tile != best_tile
+            push!(remove, can)
+          end
+        end
+      push!(effects, Effect(c, remove))
+      break
+    end
+  end
+  return effects
+end
+
+# This puzzle has a pair of duplicate Tiles
+function advanced_125()
+  return Puzzle(5, 5, [
+    Tile(II, III, IIII, I, rotates=false),
+    Tile(III, III, O, II),
+    Tile(O, O, I, II),
+    Tile(O, IIII, O, O),
+    Tile(O, II, III, III),
+    Tile(III, IIII, O, O, rotates=false),
+    Tile(I, I, I, I),
+    Tile(III, O, O, III),
+    Tile(II, O, O, O),
+    Tile(II, I, O, III, row=3, col=4),
+    Tile(III, II, III, O, rotates=false),
+    Tile(IIII, I, IIII, II, row=4, rotates=false),
+    Tile(III, I, II, O),
+    Tile(O, III, IIII, III, rotates=false),
+    Tile(IIII, I, I, III, rotates=false),
+    Tile(IIII, III, O, IIII, row=5, col=2, rotates=false),
+    Tile(IIII, I, O, II, rotates=false)
+  ])
+end
+
+function test_solve_advances_125()
+  print("\n\n\nADVANCED 125\n\n")
+  local puzzle = advanced_125()
+  do_constraints(puzzle)
+  show_candidates(puzzle)
+  map(report, puzzle.log)
+#  @test solved(puzzle)
+end
+
+test()
