@@ -637,6 +637,11 @@ count_candidates(le::LogEntry) = count_candidates(le.effects)
 
 Log = Vector{LogEntry}
 
+function report(log::Log)
+  map(report, log)
+  return
+end
+
 
 # function the_only_candidate(puzzle::Puzzle)::Vector{Effect}
 #   # If a tile is the only candidate for some Cell then it can't be
@@ -670,7 +675,7 @@ function (r::TheOnlyPlace)(puzzle::Puzzle)::Vector{Effect}
         if in_cell == nothing
           in_cell = c
         else
-          # tileis present in more than one cell.  Give up on it.
+          # Tile is present in more than one cell.  Give up on it.
           in_cell = nothing
           break
         end
@@ -700,6 +705,29 @@ function test_TheOnlyPlace()
   @test count_candidates(cell(puzzle, 1, 1)) == 4
   @test count_candidates(cell(puzzle, 1, 2)) == 2
   @test count_candidates(puzzle) == 10
+end
+
+
+struct TheOnlyTile <: Constraint; end
+function (r::TheOnlyTile)(puzzle::Puzzle)::Vector{Effect}
+  # If a tile is the only candidate for a cell, then that tile can be
+  # nowhere else.
+  local effects = Vector{Effect}()
+  for c in puzzle.grid
+    @assert length(c.candidates) > 0
+    local is_tile = can -> can.tile == c.candidates[1].tile
+    if all(is_tile, c.candidates)
+      # All candidates are for the same Tile.  That Tile can be nowhere else.
+      for c1 in puzzle.grid
+        if c1 == c continue end
+        local remove = filter(is_tile, c1.candidates)
+        if length(remove) > 0
+          push!(effects, Effect(c1, remove))
+        end
+      end
+    end
+  end
+  return effects
 end
 
 
@@ -782,6 +810,7 @@ function do_constraints(puzzle::Puzzle)
   catch e
     show(e)
   end
+  return solved(puzzle)
 end
 
 
@@ -793,35 +822,39 @@ function test_solve_1()
   ])
   @test count_candidates(puzzle) == 4 + 9 + 4 * 9 + 9
   do_constraints(puzzle)
-  # TODO: This puzzle doesn't get solved because the O, O, O, O Tiles
-  # form a consistent solution.
-  # show_candidates(puzzle)
-  # @test solved(puzzle)
+  if !solved(puzzle)
+    print("\n\nNOT SOLVED: test_solve_1\n")
+    show_candidates(puzzle)
+    report(puzzle.log)
+  end
+  return puzzle
 end
 
 function test_solve_2()
   local puzzle = Puzzle(3, 3, [
-    Tile(I, II, O, O, row=2, col=2),     # Why is this tile removed? 
+    Tile(I, II, O, O, row=2, col=2),
     Tile(I, O, O, O, col = 3),
-    Tile(II, O, O, O, row=1)
+    Tile(II, O, O, O, row=3)
   ])
   @test estimate_initial_candidates(puzzle) == count_candidates(puzzle)
   do_constraints(puzzle)
-  show_candidates(puzzle)
-  map(report, puzzle.log)
-  # @test solved(puzzle)
+  if !solved(puzzle)
+    print("\n\nNOT SOLVED: test_solve_2\n")
+    show_candidates(puzzle)
+    report(puzzle.log)
+  end
+  return puzzle
 end
 
 
 function test_solve_advanced_112()
-  print("\n\n\nADVANCED_112\n")
   local puzzle = advanced_112()
   @test estimate_initial_candidates(puzzle) == count_candidates(puzzle)
-  @printf("Initially %d candidates.\n", count_candidates(puzzle))
   do_constraints(puzzle)
   if !solved(puzzle)
+    print("\n\ntest_solve_advanced_112\n")
     show_candidates(puzzle)
-    map(report, puzzle.log)
+    report(puzzle.log)
   end
   @test solved(puzzle)
 end
@@ -887,12 +920,14 @@ function advanced_125()
 end
 
 function test_solve_advances_125()
-  print("\n\n\nADVANCED 125\n\n")
   local puzzle = advanced_125()
   do_constraints(puzzle)
-  show_candidates(puzzle)
-  map(report, puzzle.log)
-#  @test solved(puzzle)
+  if !solved(puzzle)
+    print("\n\ntest_solve_advances_125\n")
+    show_candidates(puzzle)
+    report(puzzle.log)
+  end
+  return puzzle
 end
 
 test()
